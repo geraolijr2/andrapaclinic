@@ -113,23 +113,33 @@ def fetch_v_base(limit=5000):
 RETORNO_INATIVO_DIAS = 90
 
 def rfm_scoring(df):
-    if df.empty or "data_atendimento" not in df: return pd.DataFrame()
-    d = df.dropna(subset=["data_atendimento"]).copy()
+    if df.empty or "data_atendimento" not in df:
+        return pd.DataFrame(columns=["paciente_id","paciente_nome","ultima","freq","monet","recencia","R","F","M","risco_churn"])
+
+    d = df.copy()
     d["data_atendimento"] = pd.to_datetime(d["data_atendimento"], errors="coerce")
+    d = d.dropna(subset=["data_atendimento"])
+    if d.empty:
+        return pd.DataFrame(columns=["paciente_id","paciente_nome","ultima","freq","monet","recencia","R","F","M","risco_churn"])
+
     today = pd.Timestamp.today().normalize()
     d12 = d[d["data_atendimento"] >= (today - pd.DateOffset(months=12))]
+
     grp = d12.groupby(["paciente_id","paciente_nome"], as_index=False).agg(
         ultima=("data_atendimento","max"),
         freq=("data_atendimento","count"),
         monet=("ticket_liquido","sum")
     )
     grp["recencia"] = (today - grp["ultima"]).dt.days
+
     grp["R"] = pd.cut(grp["recencia"], [-1,30,60,90,120,99999], labels=[5,4,3,2,1]).astype(int)
-    grp["F"] = pd.cut(grp["freq"], [-1,1,2,3,5,9999], labels=[1,2,3,4,5]).astype(int)
-    grp["M"] = pd.cut(grp["monet"], [-1,200,500,1000,2000,9999999], labels=[1,2,3,4,5]).astype(int)
+    grp["F"] = pd.cut(grp["freq"],     [-1,1,2,3,5,9999],        labels=[1,2,3,4,5]).astype(int)
+    grp["M"] = pd.cut(grp["monet"],    [-1,200,500,1000,2000,9999999], labels=[1,2,3,4,5]).astype(int)
+
     grp["risco_churn"] = np.where(grp["recencia"] > RETORNO_INATIVO_DIAS, "alto",
                            np.where(grp["recencia"] > 60, "médio", "baixo"))
     return grp
+
 
 def retention_cohort(df):
     if df.empty or "data_atendimento" not in df or "paciente_id" not in df: return pd.DataFrame()
@@ -153,17 +163,39 @@ def protocol_performance(df):
     return g.sort_values("receita", ascending=False)
 
 def upsell_opportunities(df, rfm):
-    if df.empty or rfm.empty: return pd.DataFrame()
-    last = df.groupby(["paciente_id","paciente_nome"])["data_atendimento"].max().reset_index(name="ultima")
-    last["ultima"] = pd.to_datetime(last["ultima"], errors="coerce")
+    # Colunas esperadas na saída para evitar erros a jusante
+    cols = ["paciente_id","paciente_nome","risco_churn","sugestao_proximo_protocolo"]
+    if df.empty or rfm.empty:
+        return pd.DataFrame(columns=cols)
+
+    d = df.copy()
+    d["data_atendimento"] = pd.to_datetime(d["data_atendimento"], errors="coerce")
+    d = d.dropna(subset=["data_atendimento"])
+    if d.empty:
+        return pd.DataFrame(columns=cols)
+
+    last = (d.groupby(["paciente_id","paciente_nome"])["data_atendimento"]
+              .max().reset_index().rename(columns={"data_atendimento":"ultima"}))
+
     base = rfm.merge(last, on=["paciente_id","paciente_nome"], how="left")
+    if "ultima" not in base.columns:
+        base["ultima"] = pd.NaT
+
     base["dias_ult"] = (pd.Timestamp.today().normalize() - base["ultima"]).dt.days
+    base["dias_ult"] = base["dias_ult"].fillna(9999)  # se não houver última data, trata como muito tempo sem visita
+
+    # candidatos: F>=2, M entre 2 e 4, 31–120 dias desde a última
     cand = base[(base["F"] >= 2) & (base["M"].between(2,4)) & (base["dias_ult"].between(31,120))]
-    top = protocol_performance(df).head(1)
-    sugestao = top["protocolo"].iloc[0] if len(top) else None
+
+    # sugestão: protocolo top por receita
+    perf = protocol_performance(df)
+    sugestao = perf["protocolo"].iloc[0] if not perf.empty else None
+
     out = cand[["paciente_id","paciente_nome","risco_churn"]].copy()
     out["sugestao_proximo_protocolo"] = sugestao
-    return out
+    # Garante colunas mesmo se vazio
+    return out.reindex(columns=cols)
+
 
 # -------- Agente (planeja → executa → relatório) --------
 def df_to_csv_text(df, max_rows=1000):
@@ -215,27 +247,43 @@ def agente_executar(df, plano):
         tool = str(ac.get("tool","")).lower()
         params = ac.get("params",{}) or {}
         saida = pd.DataFrame()
-        if tool == "rfm_scoring":
-            saida = rfm_scoring(df)
-        elif tool == "cohort_retencao":
-            saida = retention_cohort(df)
-        elif tool == "protocol_performance":
-            saida = protocol_performance(df)
-        elif tool == "pacientes_inativos":
-            dias = int(params.get("dias_inativos", 90))
-            last = df.groupby(["paciente_id","paciente_nome"])["data_atendimento"].max().reset_index(name="ultima")
-            last["ultima"] = pd.to_datetime(last["ultima"], errors="coerce")
-            last["dias_sem_visita"] = (pd.Timestamp.today().normalize() - last["ultima"]).dt.days
-            saida = last[last["dias_sem_visita"] > dias].sort_values("dias_sem_visita", ascending=False)
-        elif tool == "upsell_opportunities":
-            base_rfm = rfm_scoring(df)
-            saida = upsell_opportunities(df, base_rfm)
+        try:
+            if tool == "rfm_scoring":
+                saida = rfm_scoring(df)
+            elif tool == "cohort_retencao":
+                saida = retention_cohort(df)
+            elif tool == "protocol_performance":
+                saida = protocol_performance(df)
+            elif tool == "pacientes_inativos":
+                dias = int(params.get("dias_inativos", 90))
+                tmp = df.copy()
+                tmp["data_atendimento"] = pd.to_datetime(tmp["data_atendimento"], errors="coerce")
+                last = (tmp.dropna(subset=["data_atendimento"])
+                          .groupby(["paciente_id","paciente_nome"])["data_atendimento"]
+                          .max().reset_index(name="ultima"))
+                last["dias_sem_visita"] = (pd.Timestamp.today().normalize() - last["ultima"]).dt.days
+                saida = last[last["dias_sem_visita"] > dias].sort_values("dias_sem_visita", ascending=False)
+            elif tool == "upsell_opportunities":
+                base_rfm = rfm_scoring(df)
+                saida = upsell_opportunities(df, base_rfm)
+            else:
+                saida = pd.DataFrame()
+        except Exception as e:
+            # não derruba o agente: registra erro e segue
+            saida = pd.DataFrame()
+            # opcional: incluir erro como “amostra” textual
+            err_csv = f"erro,{str(e)}\n"
+            resultados.append({"tool": tool, "params": params, "tamanho": 0, "amostra_csv": err_csv})
+            continue
+
         resultados.append({
-            "tool": tool, "params": params,
+            "tool": tool,
+            "params": params,
             "tamanho": 0 if saida is None else (saida.shape[0] if isinstance(saida, pd.DataFrame) else 0),
             "amostra_csv": df_to_csv_text(saida, 200)
         })
     return resultados
+
 
 def agente_relatorio(df, plano, resultados):
     evidencias = []

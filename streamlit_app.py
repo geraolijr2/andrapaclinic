@@ -35,6 +35,9 @@ def auth_gate():
 auth_gate()
 
 # -------- Helpers DB --------
+def iso(d):
+    return d.isoformat() if d else None
+
 def upsert_protocolo(nome, categoria):
     got = sb.table("protocolos").select("*").eq("nome", nome).limit(1).execute()
     if got.data:
@@ -50,7 +53,7 @@ def insert_paciente(nome, tel, cid, dnasc):
         "nome": nome or None,
         "telefone": tel or None,
         "cidade_bairro": cid or None,
-        "data_nascimento": dnasc or None
+        "data_nascimento": iso(dnasc)
     }).execute()
     return res.data[0]["paciente_id"]
 
@@ -67,9 +70,9 @@ def create_atendimento(pid, protocolo_nome, categoria, status, dinicio, dprev, d
         "paciente_id": pid,
         "protocolo_id": prot_id,
         "status": status or None,
-        "data_inicio": dinicio or None,
-        "data_termino_prevista": dprev or None,
-        "data_termino_real": dreal or None,
+        "data_inicio": iso(dinicio),
+        "data_termino_prevista": iso(dprev),
+        "data_termino_real": iso(dreal),
         "dose_inicial_prescrita": dose_ini or None,
         "dose_final_ajustada": dose_fin or None,
         "tcle_assinado": bool(tcle) if tcle is not None else None,
@@ -97,7 +100,7 @@ def upsert_pagamento(aid, forma, valor, desconto, custo, parc_prev, parc_quit, d
         "custo_estimado": to_num(custo),
         "parcelas_previstas": to_int(parc_prev),
         "parcelas_quitadas": to_int(parc_quit),
-        "data_ultimo_pagamento": dt_ult or None,
+        "data_ultimo_pagamento": iso(dt_ult),
         "situacao_financeira": situacao or None
     }).execute()
 

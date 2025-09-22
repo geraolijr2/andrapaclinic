@@ -1,7 +1,7 @@
 streamlit==1.37.1
 pandas==2.2.2
 numpy==1.26.4
-supabase==2.6.0
+supabase-py==0.7.1
 plotly==5.23.0
 python-dateutil==2.9.0.post0
 openai==1.43.0

@@ -357,7 +357,7 @@ aba1, aba2, aba3, aba4 = st.tabs(["Recepção", "Consultório (Médica)", "Gest�
 
 # -------- Aba 1: Recepção
 with aba1:
-    st.subheader("Cadastro de Pacientes")
+    st.expander("Cadastro de Pacientes", expanded=False):
     col1, col2 = st.columns(2)
     with col1:
         nome_new = st.text_input("Nome completo")
@@ -372,7 +372,8 @@ with aba1:
             st.success("Paciente cadastrado!")
             fetch_pacientes.clear()
 
-    st.markdown("### Lista de Pacientes")
+    
+    st.expander("### Lista de Pacientes", expanded=False):
     busca = st.text_input("Buscar por nome ou telefone", placeholder="Ex: Ana, 3199..., João")
     pacientes = fetch_pacientes()
     if not pacientes.empty:
@@ -396,7 +397,7 @@ with aba1:
                     st.success("Agendamento criado.")
 
     st.markdown("---")
-    st.subheader("Agenda do dia (Recepção)")
+    st.expander("Agenda do dia", expanded=False):
     hoje = date.today()
     inicio = datetime(hoje.year, hoje.month, hoje.day, 0, 0)
     fim = inicio + timedelta(days=1)

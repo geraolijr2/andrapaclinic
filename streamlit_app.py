@@ -353,7 +353,7 @@ def agente_relatorio(df, plano, resultados):
 # UI - Abas
 # =========================
 st.title("AndrapaSmart")
-aba1, aba2, aba3, aba4 = st.tabs(["Recepção", "Consultório (Médica)", "Gestão / Comercial", "📲 Paciente"])
+aba1, aba2, aba3, aba4 = st.tabs(["Recepção", "Consultório", "Gestão Comercial", "📲 Paciente"])
 
 # -------- Aba 1: Recepção
 with aba1:

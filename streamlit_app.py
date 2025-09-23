@@ -10,7 +10,7 @@ import plotly.express as px
 # =========================
 # Config & Setup
 # =========================
-st.set_page_config(page_title="Gestor Comercial da Clínica", layout="wide")
+st.set_page_config(page_title="AndrapaSmart", layout="wide")
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_anon_key"]
 ADMIN_PASS = st.secrets.get("admin_pass", "")
@@ -331,8 +331,8 @@ def agente_relatorio(df, plano, resultados):
 # =========================
 # UI - Abas
 # =========================
-st.title("Gestor Comercial da Clínica")
-aba1, aba2, aba3 = st.tabs(["Recepção", "Consultório (Médica)", "Gestão / Comercial"])
+st.title("AndrapaSmart")
+aba1, aba2, aba3, aba4 = st.tabs(["Recepção", "Consultório (Médica)", "Gestão / Comercial", "📲 Paciente"])
 
 # -------- Aba 1: Recepção
 with aba1:
@@ -568,3 +568,67 @@ with aba3:
             for r in resultados:
                 if r["amostra_csv"]:
                     st.download_button(f"Baixar {r['tool']}.csv", r["amostra_csv"], file_name=f"{r['tool']}.csv", mime="text/csv")
+# -------- Aba 4: Paciente
+with aba4:
+    st.subheader("Pré-cadastro do Paciente")
+    st.write("Preencha seus dados antes da consulta.")
+
+    with st.form("cadastro_form"):
+        nome = st.text_input("Nome completo")
+        telefone = st.text_input("Telefone / WhatsApp")
+        data_nasc = st.date_input("Data de nascimento", max_value=date.today())
+        cidade = st.text_input("Cidade / Bairro")
+
+        st.markdown("### Ficha de Anamnese")
+        doencas = st.radio("Possui doenças crônicas?", ["Não", "Sim"], horizontal=True)
+        medicamentos = st.text_area("Medicamentos em uso")
+        alergias = st.text_area("Alergias conhecidas")
+        objetivo = st.selectbox(
+            "Qual é o seu principal objetivo na clínica?",
+            ["Emagrecimento", "Estética", "Prevenção", "Outro"]
+        )
+
+        enviado = st.form_submit_button("Enviar pré-cadastro")
+
+    if enviado:
+        if not nome or not telefone:
+            st.error("Por favor, preencha pelo menos nome e telefone.")
+        else:
+            try:
+                # Busca ou cria paciente
+                res = sb.table("pacientes").select("paciente_id").eq("telefone", telefone).execute()
+                if res.data:
+                    paciente_id = res.data[0]["paciente_id"]
+                else:
+                    newp = sb.table("pacientes").insert({
+                        "nome": nome,
+                        "telefone": telefone,
+                        "cidade_bairro": cidade,
+                        "data_nascimento": iso(data_nasc)
+                    }).execute()
+                    paciente_id = newp.data[0]["paciente_id"]
+
+                # Cria agendamento pendente (sem horário definido ainda)
+                ag = sb.table("agendamentos").insert({
+                    "paciente_id": paciente_id,
+                    "data_hora": date.today().isoformat(),
+                    "status": "Pendente"
+                }).execute()
+
+                # Grava anamnese
+                sb.table("anamneses").insert({
+                    "paciente_id": paciente_id,
+                    "agendamento_id": ag.data[0]["agendamento_id"],
+                    "respostas": {
+                        "doencas_cronicas": doencas,
+                        "medicamentos": medicamentos,
+                        "alergias": alergias,
+                        "objetivo": objetivo
+                    }
+                }).execute()
+
+                st.success("✅ Pré-cadastro enviado com sucesso!")
+                st.info("Quando chegar à clínica, basta informar seu nome na recepção.")
+
+            except Exception as e:
+                st.error(f"Erro ao salvar informações: {e}")                    

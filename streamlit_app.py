@@ -36,7 +36,7 @@ def auth_gate():
             else:
                 st.error("Senha inválida")
         st.stop()
-auth_gate()
+
 
 # =========================
 # Helpers

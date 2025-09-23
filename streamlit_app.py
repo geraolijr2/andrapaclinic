@@ -357,86 +357,86 @@ aba1, aba2, aba3, aba4 = st.tabs(["Recepção", "Consultório (Médica)", "Gest�
 
 # -------- Aba 1: Recepção
 with aba1:
-    st.expander("Cadastro de Pacientes", expanded=False):
-    col1, col2 = st.columns(2)
-    with col1:
-        nome_new = st.text_input("Nome completo")
-        tel_new = st.text_input("Telefone / WhatsApp")
-    with col2:
-        cid_new = st.text_input("Cidade / Bairro")
-        dnasc_new = st.date_input("Data de nascimento", value=None)
-    if st.button("Salvar paciente"):
-        if not nome_new: st.error("Informe o nome.")
-        else:
-            insert_paciente(nome_new, tel_new, cid_new, dnasc_new)
-            st.success("Paciente cadastrado!")
-            fetch_pacientes.clear()
+    with st.expander("Cadastro de Pacientes", expanded=False):
+        col1, col2 = st.columns(2)
+        with col1:
+            nome_new = st.text_input("Nome completo")
+            tel_new = st.text_input("Telefone / WhatsApp")
+        with col2:
+            cid_new = st.text_input("Cidade / Bairro")
+            dnasc_new = st.date_input("Data de nascimento", value=None)
+        if st.button("Salvar paciente"):
+            if not nome_new: st.error("Informe o nome.")
+            else:
+                insert_paciente(nome_new, tel_new, cid_new, dnasc_new)
+                st.success("Paciente cadastrado!")
+                fetch_pacientes.clear()
 
     
-    st.expander("### Lista de Pacientes", expanded=False):
-    busca = st.text_input("Buscar por nome ou telefone", placeholder="Ex: Ana, 3199..., João")
-    pacientes = fetch_pacientes()
-    if not pacientes.empty:
-        if busca:
-            mask = pacientes["nome"].str.contains(busca, case=False, na=False) | pacientes["telefone"].str.contains(busca, case=False, na=False)
-            pacientes = pacientes[mask]
-        st.dataframe(pacientes[["nome","telefone","cidade_bairro","data_nascimento"]], use_container_width=True, height=320)
-
-        # Criar agendamento manual
-        st.markdown("#### Criar agendamento")
+    with st.expander("### Lista de Pacientes", expanded=False):
+        busca = st.text_input("Buscar por nome ou telefone", placeholder="Ex: Ana, 3199..., João")
+        pacientes = fetch_pacientes()
         if not pacientes.empty:
-            nomes = pacientes.sort_values("nome")["nome"].tolist()
-            sel_nome = st.selectbox("Paciente", [""] + nomes)
-            if sel_nome:
-                pid = pacientes.loc[pacientes["nome"]==sel_nome, "paciente_id"].values[0]
-                dia = st.date_input("Data", value=date.today())
-                hora = st.time_input("Hora", value=time(9,0))
-                if st.button("Agendar"):
-                    dt = datetime(dia.year, dia.month, dia.day, hora.hour, hora.minute)
-                    create_agendamento(pid, dt, status="Pendente")
-                    st.success("Agendamento criado.")
+            if busca:
+                mask = pacientes["nome"].str.contains(busca, case=False, na=False) | pacientes["telefone"].str.contains(busca, case=False, na=False)
+                pacientes = pacientes[mask]
+            st.dataframe(pacientes[["nome","telefone","cidade_bairro","data_nascimento"]], use_container_width=True, height=320)
+    
+            # Criar agendamento manual
+            st.markdown("#### Criar agendamento")
+            if not pacientes.empty:
+                nomes = pacientes.sort_values("nome")["nome"].tolist()
+                sel_nome = st.selectbox("Paciente", [""] + nomes)
+                if sel_nome:
+                    pid = pacientes.loc[pacientes["nome"]==sel_nome, "paciente_id"].values[0]
+                    dia = st.date_input("Data", value=date.today())
+                    hora = st.time_input("Hora", value=time(9,0))
+                    if st.button("Agendar"):
+                        dt = datetime(dia.year, dia.month, dia.day, hora.hour, hora.minute)
+                        create_agendamento(pid, dt, status="Pendente")
+                        st.success("Agendamento criado.")
 
     st.markdown("---")
-    st.expander("Agenda do dia", expanded=False):
-    hoje = date.today()
-    inicio = datetime(hoje.year, hoje.month, hoje.day, 0, 0)
-    fim = inicio + timedelta(days=1)
-    agenda = fetch_agenda_interval(inicio.isoformat(), fim.isoformat())
-    if agenda.empty:
-        st.info("Sem agendamentos hoje.")
-    else:
-        # filtros simples
-        fcol1, fcol2 = st.columns(2)
-        with fcol1:
-            status_f = st.multiselect("Status", ["Pendente","Confirmado","Cancelado","Atendido"], default=["Pendente","Confirmado"])
-        with fcol2:
-            q = st.text_input("Buscar por nome/telefone na agenda")
-        ag = agenda.copy()
-        if status_f:
-            ag = ag[ag["status"].isin(status_f)]
-        if q:
-            ag = ag[ag["paciente_nome"].str.contains(q, case=False, na=False) | ag["paciente_telefone"].str.contains(q, case=False, na=False)]
-        st.dataframe(ag[["data_hora","paciente_nome","paciente_telefone","status"]], use_container_width=True, height=320)
-
-        st.markdown("#### Ações rápidas")
-        if not ag.empty:
-            nomes = ag["paciente_nome"].tolist()
-            pick = st.selectbox("Selecione um paciente para ação", [""] + nomes)
-            if pick:
-                row = ag[ag["paciente_nome"]==pick].iloc[0]
-                colA, colB, colC = st.columns(3)
-                with colA:
-                    if st.button("Confirmar presença"):
-                        set_agendamento_status(row["agendamento_id"], "Confirmado")
-                        st.success("Confirmado.")
-                with colB:
-                    if st.button("Cancelar"):
-                        set_agendamento_status(row["agendamento_id"], "Cancelado")
-                        st.warning("Cancelado.")
-                with colC:
-                    if st.button("Marcar como atendido (fechar)"):
-                        set_agendamento_status(row["agendamento_id"], "Atendido")
-                        st.success("Marcado como atendido.")
+    with st.expander("Agenda do dia", expanded=False):
+        hoje = date.today()
+        inicio = datetime(hoje.year, hoje.month, hoje.day, 0, 0)
+        fim = inicio + timedelta(days=1)
+        agenda = fetch_agenda_interval(inicio.isoformat(), fim.isoformat())
+        if agenda.empty:
+            st.info("Sem agendamentos hoje.")
+        else:
+            # filtros simples
+            fcol1, fcol2 = st.columns(2)
+            with fcol1:
+                status_f = st.multiselect("Status", ["Pendente","Confirmado","Cancelado","Atendido"], default=["Pendente","Confirmado"])
+            with fcol2:
+                q = st.text_input("Buscar por nome/telefone na agenda")
+            ag = agenda.copy()
+            if status_f:
+                ag = ag[ag["status"].isin(status_f)]
+            if q:
+                ag = ag[ag["paciente_nome"].str.contains(q, case=False, na=False) | ag["paciente_telefone"].str.contains(q, case=False, na=False)]
+            st.dataframe(ag[["data_hora","paciente_nome","paciente_telefone","status"]], use_container_width=True, height=320)
+    
+            st.markdown("#### Ações rápidas")
+            if not ag.empty:
+                nomes = ag["paciente_nome"].tolist()
+                pick = st.selectbox("Selecione um paciente para ação", [""] + nomes)
+                if pick:
+                    row = ag[ag["paciente_nome"]==pick].iloc[0]
+                    colA, colB, colC = st.columns(3)
+                    with colA:
+                        if st.button("Confirmar presença"):
+                            set_agendamento_status(row["agendamento_id"], "Confirmado")
+                            st.success("Confirmado.")
+                    with colB:
+                        if st.button("Cancelar"):
+                            set_agendamento_status(row["agendamento_id"], "Cancelado")
+                            st.warning("Cancelado.")
+                    with colC:
+                        if st.button("Marcar como atendido (fechar)"):
+                            set_agendamento_status(row["agendamento_id"], "Atendido")
+                            st.success("Marcado como atendido.")
 
 # -------- Aba 2: Consultório (Médica)
 with aba2:

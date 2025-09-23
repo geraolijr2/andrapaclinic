@@ -357,7 +357,7 @@ aba1, aba2, aba3, aba4 = st.tabs(["Recepção", "Consultório", "Gestão Comerci
 
 # -------- Aba 1: Recepção
 with aba1:
-    with st.expander("Cadastro de Pacientes", expanded=False):
+    with st.expander("👤➕ Cadastro de Pacientes", expanded=False):
         col1, col2 = st.columns(2)
         with col1:
             nome_new = st.text_input("Nome completo")
@@ -373,7 +373,7 @@ with aba1:
                 fetch_pacientes.clear()
 
     
-    with st.expander("### Lista de Pacientes", expanded=False):
+    with st.expander("### 👥 Pacientes Cadastrados", expanded=False):
         busca = st.text_input("Buscar por nome ou telefone", placeholder="Ex: Ana, 3199..., João")
         pacientes = fetch_pacientes()
         if not pacientes.empty:
@@ -383,7 +383,7 @@ with aba1:
             st.dataframe(pacientes[["nome","telefone","cidade_bairro","data_nascimento"]], use_container_width=True, height=320)
     
             # Criar agendamento manual
-            st.markdown("#### Criar agendamento")
+            st.markdown("📅➕ Criar agendamento")
             if not pacientes.empty:
                 nomes = pacientes.sort_values("nome")["nome"].tolist()
                 sel_nome = st.selectbox("Paciente", [""] + nomes)
@@ -396,8 +396,7 @@ with aba1:
                         create_agendamento(pid, dt, status="Pendente")
                         st.success("Agendamento criado.")
 
-    st.markdown("---")
-    with st.expander("Agenda do dia", expanded=False):
+    with st.expander("📅 Agenda do dia", expanded=False):
         hoje = date.today()
         inicio = datetime(hoje.year, hoje.month, hoje.day, 0, 0)
         fim = inicio + timedelta(days=1)

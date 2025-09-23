@@ -1,4 +1,3 @@
-# streamlit_app.py
 import os, io, json, re, math
 import streamlit as st
 import pandas as pd
@@ -81,7 +80,12 @@ def update_paciente(pid, nome, tel, cid, dnasc):
 @st.cache_data(ttl=60)
 def fetch_pacientes(limit=5000):
     res = sb.table("pacientes").select("*").order("created_at", desc=True).limit(limit).execute()
-    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    expected = ["paciente_id","nome","telefone","cidade_bairro","data_nascimento","created_at"]
+    for c in expected:
+        if c not in df.columns:
+            df[c] = None
+    return df[expected]
 
 def upsert_protocolo(nome, categoria):
     if not nome: return None
@@ -130,18 +134,29 @@ def upsert_pagamento(aid, forma, valor, desconto, custo, parc_prev, parc_quit, d
 @st.cache_data(ttl=30)
 def fetch_v_base(limit=10000):
     res = sb.table("v_base").select("*").limit(limit).execute()
-    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    if df.empty:
+        expected = ["atendimento_id","paciente_id","paciente_nome","data_atendimento","protocolo","status","ticket_liquido","situacao_financeira"]
+        for c in expected:
+            if c not in df.columns:
+                df[c] = None
+        return df[expected]
+    return df
 
 @st.cache_data(ttl=15)
 def fetch_agenda_interval(inicio_iso, fim_iso):
-    # usa a view v_agenda (join pronto)
     res = (sb.table("v_agenda")
            .select("*")
            .gte("data_hora", inicio_iso)
            .lt("data_hora", fim_iso)
            .order("data_hora", desc=False)
            .execute())
-    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    expected = ["agendamento_id","paciente_id","paciente_nome","paciente_telefone","data_hora","status"]
+    for c in expected:
+        if c not in df.columns:
+            df[c] = None
+    return df[expected]
 
 def set_agendamento_status(agendamento_id, status):
     sb.table("agendamentos").update({"status": status}).eq("agendamento_id", agendamento_id).execute()
@@ -166,7 +181,13 @@ def fetch_atendimentos_paciente(pid, limit=10):
     res = (sb.table("v_base").select("*")
            .eq("paciente_id", pid)
            .order("data_atendimento", desc=True).limit(limit).execute())
-    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    expected = ["atendimento_id","paciente_id","data_atendimento","protocolo","status","ticket_liquido","situacao_financeira"]
+    for c in expected:
+        if c not in df.columns:
+            df[c] = None
+    return df[expected]
+
 
 # =========================
 # Análises (RFM / Cohort / Upsell) e Agente (mesmo core que já montamos)

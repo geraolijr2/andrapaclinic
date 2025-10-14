@@ -14,8 +14,6 @@ st.set_page_config(page_title="AndrapaSmart – Controle de Protocolos", layout=
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_anon_key"]
 ADMIN_PASS = st.secrets.get("admin_pass", "")
-OPENAI_KEY = st.secrets.get("openai_api_key")
-OPENAI_MODEL = st.secrets.get("openai_model", "gpt-4o-mini")
 
 @st.cache_resource
 def get_sb() -> Client:
@@ -30,14 +28,16 @@ sb = get_sb()
 def fetch_pacientes_base():
     res = sb.table("pacientes").select("paciente_id, nome, telefone, cidade_bairro").execute()
     df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-    df = df.dropna(subset=["nome"]).drop_duplicates(subset=["nome"])
+    if not df.empty:
+        df = df.dropna(subset=["nome"]).drop_duplicates(subset=["nome"])
     return df
 
 @st.cache_data(ttl=30)
 def fetch_protocolos_base():
     res = sb.table("protocolos").select("protocolo_id, nome, categoria").execute()
     df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-    df = df.dropna(subset=["nome"]).drop_duplicates(subset=["nome"])
+    if not df.empty:
+        df = df.dropna(subset=["nome"]).drop_duplicates(subset=["nome"])
     return df
 
 @st.cache_data(ttl=30)
@@ -50,24 +50,24 @@ def fetch_v_base(limit=10000):
             "data_atendimento", "protocolo", "status",
             "ticket_liquido", "situacao_financeira"
         ])
-    # Garante os tipos básicos
-    df["data_atendimento"] = pd.to_datetime(df["data_atendimento"], errors="coerce")
-    df["ticket_liquido"] = pd.to_numeric(df["ticket_liquido"], errors="coerce").fillna(0)
+    df.columns = df.columns.str.lower()
+    df["data_atendimento"] = pd.to_datetime(df.get("data_atendimento"), errors="coerce")
+    df["ticket_liquido"] = pd.to_numeric(df.get("ticket_liquido", 0), errors="coerce").fillna(0)
     return df
-
-
 
 
 # =====================================
 # ANÁLISES
 # =====================================
-RETORNO_INATIVO_DIAS = 90
-
 def rfm_analise(df):
-    if df.empty: 
+    if df.empty:
         return pd.DataFrame()
-    d = df.copy()
-    d = d.dropna(subset=["paciente_nome", "data_atendimento"])
+    df.columns = df.columns.str.lower()
+    if not {"paciente_nome", "data_atendimento"}.issubset(df.columns):
+        st.warning("⚠️ Campos esperados não encontrados em v_base.")
+        return pd.DataFrame()
+
+    d = df.dropna(subset=["paciente_nome", "data_atendimento"]).copy()
     hoje = pd.Timestamp.today().normalize()
     ult_ano = d[d["data_atendimento"] >= (hoje - pd.DateOffset(months=12))]
     grp = ult_ano.groupby(["paciente_id", "paciente_nome"], as_index=False).agg(
@@ -99,58 +99,43 @@ def desempenho_protocolos(df):
     if df.empty:
         return pd.DataFrame()
 
-    # Normaliza colunas para minúsculas e cria um mapa
     df = df.copy()
-    col_map = {c.lower(): c for c in df.columns}
     df.columns = df.columns.str.lower()
-
-    # Verifica presença das colunas necessárias
     if "protocolo" not in df.columns:
-        st.warning(f"⚠️ Coluna 'protocolo' não encontrada. Colunas disponíveis: {list(df.columns)}")
+        st.warning(f"⚠️ Coluna 'protocolo' não encontrada. Colunas atuais: {list(df.columns)}")
         return pd.DataFrame()
-
     if "ticket_liquido" not in df.columns:
-        st.warning(f"⚠️ Coluna 'ticket_liquido' não encontrada. Colunas disponíveis: {list(df.columns)}")
+        st.warning(f"⚠️ Coluna 'ticket_liquido' não encontrada. Colunas atuais: {list(df.columns)}")
         return pd.DataFrame()
 
-    # Garante que os campos estejam numéricos
     df["ticket_liquido"] = pd.to_numeric(df["ticket_liquido"], errors="coerce").fillna(0)
-
-    # Faz o agrupamento
     try:
         g = df.groupby("protocolo", as_index=False).agg(
             atendimentos=("atendimento_id", "count"),
             receita=("ticket_liquido", "sum"),
             ticket_medio=("ticket_liquido", "mean")
         )
+        g = g.rename(columns={
+            "protocolo": "Protocolo",
+            "atendimentos": "Atendimentos",
+            "receita": "Receita",
+            "ticket_medio": "Ticket médio (R$)"
+        })
+        g = g.sort_values("Receita", ascending=False)
+        return g
     except Exception as e:
         st.error(f"Erro ao agrupar protocolos: {e}")
-        st.warning(f"Colunas atuais: {list(df.columns)}")
         return pd.DataFrame()
-
-    g = g.rename(columns={
-        "protocolo": "Protocolo",
-        "atendimentos": "Atendimentos",
-        "receita": "Receita",
-        "ticket_medio": "Ticket médio (R$)"
-    })
-    g = g.sort_values("Receita", ascending=False)
-    return g
-
-
-
 
 
 def oportunidades_retorno(df, rfm_df):
-    if df.empty or rfm_df.empty: return pd.DataFrame()
-    d = rfm_df[rfm_df["Tempo sem retorno"].isin(["alto","muito alto"])].copy()
+    if df.empty or rfm_df.empty:
+        return pd.DataFrame()
+    d = rfm_df[rfm_df["Tempo sem retorno"].isin(["alto", "muito alto"])].copy()
     d = d.sort_values("Dias desde o último atendimento", ascending=False)
     return d
 
 
-# =====================================
-# FORMULÁRIO INTELIGENTE – MODO MÉDICA
-# =====================================
 # =====================================
 # FORMULÁRIO INTELIGENTE – MODO MÉDICA
 # =====================================
@@ -162,17 +147,15 @@ protocolos_df = fetch_protocolos_base()
 nomes_pacientes = sorted(pacientes_df["nome"].unique().tolist()) if not pacientes_df.empty else []
 nomes_protocolos = sorted(protocolos_df["nome"].unique().tolist()) if not protocolos_df.empty else []
 
-# Estado inicial de campos
 if "form_data" not in st.session_state:
     st.session_state.form_data = {}
 
-# --- Seleção de paciente (fora do form, pra permitir auto preenchimento em tempo real) ---
+# Seleção de paciente (auto-preenche)
 paciente_sel = st.selectbox(
     "Nome do paciente",
     options=[""] + nomes_pacientes,
     index=0,
-    key="paciente_select",
-    help="Selecione um paciente existente ou deixe em branco para novo."
+    key="paciente_select"
 )
 
 if paciente_sel:
@@ -208,12 +191,7 @@ with st.form("form_vbase_simplificado"):
             placeholder="Ex: Belo Horizonte / Lourdes"
         )
 
-        protocolo = st.selectbox(
-            "Protocolo",
-            options=[""] + nomes_protocolos,
-            index=0,
-            help="Escolha um protocolo existente ou digite um novo."
-        )
+        protocolo = st.selectbox("Protocolo", options=[""] + nomes_protocolos, index=0)
         if protocolo == "":
             protocolo = st.text_input("Novo protocolo", placeholder="Ex: Semaglutida semanal")
 
@@ -225,7 +203,6 @@ with st.form("form_vbase_simplificado"):
         status = st.selectbox("Status", ["Em curso", "Concluído", "Cancelado"], index=0)
         tcle_assinado = st.checkbox("TCLE assinado?", value=True)
         origem = st.text_input("Origem", placeholder="Ex: Indicação, Instagram, Google")
-
         dose_inicial_prescrita = st.text_input("Dose inicial prescrita", placeholder="Ex: 0.25 mg")
         dose_final_ajustada = st.text_input("Dose final ajustada", placeholder="Ex: 1 mg")
         data_termino_prevista = st.date_input("Previsão de término", value=None)
@@ -257,7 +234,7 @@ if enviar:
         st.error("Por favor, preencha pelo menos o nome do paciente e o protocolo.")
     else:
         try:
-            # --- PACIENTE ---
+            # PACIENTE
             paciente_q = sb.table("pacientes").select("paciente_id").ilike("nome", paciente_nome.strip()).execute()
             if paciente_q.data:
                 paciente_id = paciente_q.data[0]["paciente_id"]
@@ -271,7 +248,7 @@ if enviar:
                 }).execute()
                 paciente_id = novo.data[0]["paciente_id"]
 
-            # --- PROTOCOLO ---
+            # PROTOCOLO
             protocolo_q = sb.table("protocolos").select("protocolo_id").ilike("nome", protocolo.strip()).execute()
             if protocolo_q.data:
                 protocolo_id = protocolo_q.data[0]["protocolo_id"]
@@ -284,7 +261,7 @@ if enviar:
                 }).execute()
                 protocolo_id = novo_p.data[0]["protocolo_id"]
 
-            # --- ATENDIMENTO ---
+            # ATENDIMENTO
             atendimento_id = str(uuid.uuid4())
             sb.table("atendimentos").insert({
                 "atendimento_id": atendimento_id,
@@ -303,7 +280,7 @@ if enviar:
                 "created_at": datetime.now().isoformat()
             }).execute()
 
-            # --- PAGAMENTO ---
+            # PAGAMENTO
             if valor or desconto or custo_estimado:
                 sb.table("pagamentos").insert({
                     "pagamento_id": str(uuid.uuid4()),
@@ -319,7 +296,7 @@ if enviar:
                     "created_at": datetime.now().isoformat()
                 }).execute()
 
-            # --- LIMPA FORM E ATUALIZA ---
+            # LIMPA E ATUALIZA
             fetch_v_base.clear()
             fetch_pacientes_base.clear()
             fetch_protocolos_base.clear()
@@ -329,6 +306,7 @@ if enviar:
 
         except Exception as e:
             st.error(f"Erro ao salvar: {e}")
+
 
 # =====================================
 # DASHBOARD
@@ -341,12 +319,11 @@ if df.empty:
     st.info("Nenhum dado encontrado ainda.")
     st.stop()
 
-# Remove colunas com IDs antes de exibir
-df = df[[c for c in df.columns if not c.endswith("_id") and "created_at" not in c]]
+# Remove IDs e timestamps
+cols_visiveis = [c for c in df.columns if not c.endswith("_id") and c not in ["created_at"]]
+df = df[cols_visiveis]
 
-df["ticket_liquido"] = pd.to_numeric(df["ticket_liquido"], errors="coerce").fillna(0)
-df["data_atendimento"] = pd.to_datetime(df["data_atendimento"], errors="coerce")
-
+# Métricas
 col1, col2, col3, col4 = st.columns(4)
 receita_total = df["ticket_liquido"].sum()
 total_atendimentos = len(df)
@@ -361,23 +338,14 @@ col4.metric("💵 Ticket médio", f"R$ {ticket_medio:,.2f}")
 st.markdown("### 📋 Lista de protocolos realizados")
 st.dataframe(df, use_container_width=True, height=350)
 
-
 st.markdown("### 📈 Protocolos com maior faturamento")
 prot = desempenho_protocolos(df)
 if not prot.empty:
-    fig = px.bar(
-        prot.head(10),
-        x="protocolo",
-        y="Receita",
-        color="protocolo",
-        title="Protocolos mais lucrativos"
-    )
+    fig = px.bar(prot.head(10), x="Protocolo", y="Receita",
+                 color="Protocolo", title="Protocolos mais lucrativos")
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("Nenhum dado disponível para exibir o gráfico de faturamento por protocolo.")
-
-
-
 
 st.markdown("### 🔍 Pacientes e frequência de retorno")
 rfm_df = rfm_analise(df)

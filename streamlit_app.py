@@ -110,27 +110,33 @@ def desempenho_protocolos(df):
     if df.empty:
         return pd.DataFrame()
 
-    # Detecta o nome da coluna do protocolo
-    col_proto = None
-    for c in df.columns:
-        if c.lower() in ["protocolo", "protocolo_nome", "nome_protocolo"]:
-            col_proto = c
-            break
-
+    # Detecta o nome da coluna do protocolo (aceita variações)
+    col_proto = next((c for c in df.columns if c.lower() in ["protocolo", "protocolo_nome", "nome_protocolo"]), None)
     if not col_proto:
         st.warning("⚠️ Nenhuma coluna de protocolo encontrada na base (ex: 'protocolo_nome').")
         return pd.DataFrame()
 
+    # Detecta coluna de ID (para contagem)
+    col_id = next((c for c in df.columns if "id" in c.lower()), df.columns[0])
+
     d = df.copy()
     d["ticket_liquido"] = pd.to_numeric(d.get("ticket_liquido", 0), errors="coerce").fillna(0)
 
-    g = d.groupby(col_proto, as_index=False).agg({
-        d.columns[0]: "count",  # conta qualquer coluna existente (como atendimento_id)
-        "ticket_liquido": ["sum", "mean"]
-    })
+    try:
+        g = d.groupby(col_proto, as_index=False).agg({
+            col_id: "count",
+            "ticket_liquido": ["sum", "mean"]
+        })
+    except Exception as e:
+        st.error(f"Erro ao agrupar protocolos: {e}")
+        return pd.DataFrame()
 
     g.columns = ["Protocolo", "Atendimentos", "Receita", "Ticket médio (R$)"]
-    return g.sort_values("Receita", ascending=False)
+    g["Receita"] = g["Receita"].astype(float)
+    g["Ticket médio (R$)"] = g["Ticket médio (R$)"].astype(float)
+    g = g.sort_values("Receita", ascending=False)
+    return g
+
 
 
 def oportunidades_retorno(df, rfm_df):
@@ -356,9 +362,13 @@ st.dataframe(df, use_container_width=True, height=350)
 
 st.markdown("### 📈 Protocolos com maior faturamento")
 prot = desempenho_protocolos(df)
-if not prot.empty:
-    fig = px.bar(prot.head(10), x="Protocolo", y="Receita", color="Protocolo", title="Protocolos mais lucrativos")
+if not prot.empty and "Protocolo" in prot.columns and "Receita" in prot.columns:
+    fig = px.bar(prot.head(10), x="Protocolo", y="Receita",
+                 color="Protocolo", title="Protocolos mais lucrativos")
     st.plotly_chart(fig, use_container_width=True)
+else:
+    st.info("Nenhum dado disponível para exibir o gráfico de faturamento por protocolo.")
+
 
 st.markdown("### 🔍 Pacientes e frequência de retorno")
 rfm_df = rfm_analise(df)

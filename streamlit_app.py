@@ -242,7 +242,7 @@ with st.form("form_vbase_simplificado"):
             protocolo = st.text_input("Novo protocolo", placeholder="Ex: Semaglutida semanal")
 
         categoria = st.selectbox("Categoria", ["Emagrecimento", "Estética", "Outros"], index=0)
-        medica = st.text_input("Médica responsável", placeholder="")
+        medica = st.text_input("Médica responsável", value="Dra. Rochelle")
 
     with col2:
         data_atendimento = st.date_input("Data do atendimento", value=date.today())

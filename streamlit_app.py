@@ -180,10 +180,17 @@ st.dataframe(df, use_container_width=True, height=350)
 st.markdown("### 📈 Protocolos com maior faturamento")
 prot = desempenho_protocolos(df)
 if not prot.empty:
-    fig = px.bar(prot.head(10), x="protocolo", y="Receita", color="protocolo", title="Protocolos mais lucrativos")
+    fig = px.bar(
+        prot.head(10),
+        x="Protocolo",
+        y="Receita",
+        color="Protocolo",
+        title="Protocolos mais lucrativos"
+    )
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("Ainda não há dados suficientes para este gráfico.")
+
 
 # --- Análise de pacientes e retorno
 st.markdown("### 🔍 Pacientes e frequência de retorno")

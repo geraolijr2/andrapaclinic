@@ -42,18 +42,42 @@ def fetch_protocolos_base():
 
 @st.cache_data(ttl=30)
 def fetch_v_base(limit=10000):
-    res = sb.table("v_base").select("*").limit(limit).execute()
-    df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-    if df.empty:
-        return pd.DataFrame(columns=[
+    try:
+        res = sb.table("v_base").select("*").limit(limit).execute()
+
+        # Verifica se veio algum dado
+        if not res.data or len(res.data) == 0:
+            st.info("⚠️ Nenhum registro encontrado em v_base.")
+            return pd.DataFrame()
+
+        # Converte em DataFrame e força colunas
+        df = pd.DataFrame(res.data)
+        df.columns = df.columns.str.lower()
+
+        # Log para debug
+        st.write("🔍 Colunas carregadas da v_base:", df.columns.tolist())
+
+        # Garante presença dos campos esperados
+        required = [
             "atendimento_id", "paciente_id", "paciente_nome",
             "data_atendimento", "protocolo", "status",
             "ticket_liquido", "situacao_financeira"
-        ])
-    df.columns = df.columns.str.lower()
-    df["data_atendimento"] = pd.to_datetime(df.get("data_atendimento"), errors="coerce")
-    df["ticket_liquido"] = pd.to_numeric(df.get("ticket_liquido", 0), errors="coerce").fillna(0)
-    return df
+        ]
+        for c in required:
+            if c not in df.columns:
+                st.warning(f"⚠️ Coluna ausente: {c}")
+                df[c] = None
+
+        # Converte tipos
+        df["data_atendimento"] = pd.to_datetime(df["data_atendimento"], errors="coerce")
+        df["ticket_liquido"] = pd.to_numeric(df["ticket_liquido"], errors="coerce").fillna(0)
+
+        return df
+
+    except Exception as e:
+        st.error(f"❌ Erro ao carregar v_base: {e}")
+        return pd.DataFrame()
+
 
 
 # =====================================

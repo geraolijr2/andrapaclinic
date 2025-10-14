@@ -5,6 +5,8 @@ import numpy as np
 from datetime import date, datetime
 from supabase import create_client, Client
 import plotly.express as px
+import uuid
+
 
 # =====================================
 # CONFIGURAÇÃO GERAL
@@ -22,22 +24,100 @@ def get_sb() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 sb = get_sb()
 
-# =====================================
-# AUTENTICAÇÃO
-# =====================================
-def auth_gate():
-    if "auth_ok" not in st.session_state:
-        st.session_state.auth_ok = False
-    if not st.session_state.auth_ok:
-        st.title("Acesso Restrito")
-        pw = st.text_input("Digite a senha de acesso", type="password")
-        if st.button("Entrar"):
-            if pw == ADMIN_PASS and pw:
-                st.session_state.auth_ok = True
-            else:
-                st.error("Senha incorreta. Tente novamente.")
-        st.stop()
-auth_gate()
+
+
+# --- CADASTRO SIMPLIFICADO (MODO MÉDICA) ---
+st.markdown("## 🩺 Registrar Protocolados")
+
+with st.form("form_vbase_simplificado"):
+    st.caption("Preencha os campos principais do atendimento atual.")
+    col1, col2 = st.columns(2)
+
+    # Coluna esquerda - informações principais
+    with col1:
+        paciente_nome = st.text_input("Nome do paciente", placeholder="Ex: Ana Souza")
+        telefone = st.text_input("Telefone / WhatsApp", placeholder="Ex: (31) 99999-9999")
+        protocolo = st.text_input("Protocolo", placeholder="Ex: Semaglutida semanal")
+        categoria = st.selectbox("Categoria", ["Emagrecimento", "Estética", "Outros"], index=0)
+        medica = st.text_input("Médica responsável", placeholder="Ex: Dra. Mariana")
+
+    # Coluna direita - status e dados principais
+    with col2:
+        data_atendimento = st.date_input("Data do atendimento", value=date.today())
+        status = st.selectbox("Status", ["Em curso", "Concluído", "Cancelado"], index=0)
+        tcle_assinado = st.checkbox("TCLE assinado?", value=True)
+        origem = st.text_input("Origem", placeholder="Ex: Indicação, Instagram, Google")
+        cidade_bairro = st.text_input("Cidade / Bairro", placeholder="Ex: Belo Horizonte / Lourdes")
+
+    # Linha abaixo - campos de protocolo
+    st.markdown("### 💊 Detalhes do protocolo")
+    col3, col4 = st.columns(2)
+    with col3:
+        dose_inicial_prescrita = st.text_input("Dose inicial prescrita", placeholder="Ex: 0.25 mg")
+        dose_final_ajustada = st.text_input("Dose final ajustada", placeholder="Ex: 1 mg")
+    with col4:
+        data_termino_prevista = st.date_input("Previsão de término", value=None)
+        data_termino_real = st.date_input("Término real (se já finalizado)", value=None)
+
+    observacoes = st.text_area("Observações", placeholder="Observações clínicas, efeitos relatados, evolução...")
+
+    # Seção de pagamento (expansível)
+    with st.expander("💰 Dados de pagamento (opcional)", expanded=False):
+        col5, col6, col7 = st.columns(3)
+        with col5:
+            forma_pagamento = st.selectbox("Forma de pagamento", ["Pix", "Cartão", "Dinheiro", "Outro"], index=0)
+            valor = st.number_input("Valor total (R$)", min_value=0.0, step=10.0)
+        with col6:
+            desconto = st.number_input("Desconto (R$)", min_value=0.0, step=10.0)
+            custo_estimado = st.number_input("Custo estimado (R$)", min_value=0.0, step=10.0)
+        with col7:
+            parcelas_previstas = st.number_input("Parcelas previstas", min_value=0, step=1)
+            parcelas_quitadas = st.number_input("Parcelas quitadas", min_value=0, step=1)
+            data_ultimo_pagamento = st.date_input("Último pagamento", value=None)
+        situacao_financeira = st.selectbox("Situação financeira", ["Em dia", "Em aberto", "Atrasado"], index=0)
+
+    enviar = st.form_submit_button("✅ Salvar atendimento")
+
+if enviar:
+    if not paciente_nome or not protocolo:
+        st.error("Por favor, preencha pelo menos o nome do paciente e o protocolo.")
+    else:
+        try:
+            ticket_liquido = (valor or 0) - (desconto or 0)
+            sb.table("v_base").insert({
+                "atendimento_id": str(uuid.uuid4()),
+                "paciente_id": str(uuid.uuid4()),
+                "paciente_nome": paciente_nome,
+                "telefone": telefone,
+                "cidade_bairro": cidade_bairro,
+                "protocolo": protocolo,
+                "categoria": categoria,
+                "status": status,
+                "data_atendimento": data_atendimento.isoformat() if data_atendimento else None,
+                "data_termino_prevista": data_termino_prevista.isoformat() if data_termino_prevista else None,
+                "data_termino_real": data_termino_real.isoformat() if data_termino_real else None,
+                "dose_inicial_prescrita": dose_inicial_prescrita,
+                "dose_final_ajustada": dose_final_ajustada,
+                "tcle_assinado": bool(tcle_assinado),
+                "medica": medica,
+                "origem": origem,
+                "observacoes": observacoes,
+                "forma_pagamento": forma_pagamento,
+                "ticket_liquido": float(ticket_liquido),
+                "valor": float(valor or 0),
+                "desconto": float(desconto or 0),
+                "custo_estimado": float(custo_estimado or 0),
+                "parcelas_previstas": int(parcelas_previstas or 0),
+                "parcelas_quitadas": int(parcelas_quitadas or 0),
+                "data_ultimo_pagamento": data_ultimo_pagamento.isoformat() if data_ultimo_pagamento else None,
+                "situacao_financeira": situacao_financeira,
+                "created_at": datetime.now().isoformat()
+            }).execute()
+            fetch_v_base.clear()
+            st.success(f"✅ Atendimento de {paciente_nome} salvo com sucesso!")
+        except Exception as e:
+            st.error(f"Erro ao salvar: {e}")
+
 
 # =====================================
 # SUPABASE – BASE PRINCIPAL

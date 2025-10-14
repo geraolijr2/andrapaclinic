@@ -391,8 +391,4 @@ else:
 
 
 
-st.markdown("### 📞 Pacientes que estão há muito tempo sem retornar")
-op = oportunidades_retorno(df, rfm_df)
-if not op.empty:
-    st.dataframe(op[["Paciente", "Dias desde o último atendimento", "Total gasto (R$)"]],
-                 use_container_width=True)
+

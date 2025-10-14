@@ -6,6 +6,7 @@ from datetime import date, datetime
 from supabase import create_client, Client
 import plotly.express as px
 
+
 # =====================================
 # CONFIGURAÇÃO GERAL
 # =====================================
@@ -22,7 +23,7 @@ sb = get_sb()
 
 
 # =====================================
-# SUPABASE – BASES AUXILIARES
+# SUPABASE – FUNÇÕES DE ACESSO
 # =====================================
 @st.cache_data(ttl=30)
 def fetch_pacientes_base():
@@ -32,6 +33,7 @@ def fetch_pacientes_base():
         df = df.dropna(subset=["nome"]).drop_duplicates(subset=["nome"])
     return df
 
+
 @st.cache_data(ttl=30)
 def fetch_protocolos_base():
     res = sb.table("protocolos").select("protocolo_id, nome, categoria").execute()
@@ -40,37 +42,37 @@ def fetch_protocolos_base():
         df = df.dropna(subset=["nome"]).drop_duplicates(subset=["nome"])
     return df
 
+
 @st.cache_data(ttl=30)
 def fetch_v_base(limit=10000):
     try:
         res = sb.table("v_base").select("*").limit(limit).execute()
 
-        # Verifica se veio algum dado
         if not res.data or len(res.data) == 0:
             st.info("⚠️ Nenhum registro encontrado em v_base.")
             return pd.DataFrame()
 
-        # Converte em DataFrame e força colunas
         df = pd.DataFrame(res.data)
-        df.columns = df.columns.str.lower()
 
-        # Log para debug
-        st.write("🔍 Colunas carregadas da v_base:", df.columns.tolist())
+        # Normaliza nomes das colunas (remove espaços e caracteres invisíveis)
+        df.columns = (
+            df.columns
+            .str.encode("ascii", "ignore")
+            .str.decode("utf-8")
+            .str.strip()
+            .str.replace("\u00a0", "")
+            .str.replace("\ufeff", "")
+            .str.lower()
+        )
 
-        # Garante presença dos campos esperados
-        required = [
-            "atendimento_id", "paciente_id", "paciente_nome",
-            "data_atendimento", "protocolo", "status",
-            "ticket_liquido", "situacao_financeira"
-        ]
-        for c in required:
-            if c not in df.columns:
-                st.warning(f"⚠️ Coluna ausente: {c}")
-                df[c] = None
+        # Log para debug (apenas para conferência inicial)
+        st.write("🔍 Colunas normalizadas:", df.columns.tolist())
 
-        # Converte tipos
-        df["data_atendimento"] = pd.to_datetime(df["data_atendimento"], errors="coerce")
-        df["ticket_liquido"] = pd.to_numeric(df["ticket_liquido"], errors="coerce").fillna(0)
+        # Garante tipos
+        if "data_atendimento" in df.columns:
+            df["data_atendimento"] = pd.to_datetime(df["data_atendimento"], errors="coerce")
+        if "ticket_liquido" in df.columns:
+            df["ticket_liquido"] = pd.to_numeric(df["ticket_liquido"], errors="coerce").fillna(0)
 
         return df
 
@@ -79,26 +81,29 @@ def fetch_v_base(limit=10000):
         return pd.DataFrame()
 
 
-
 # =====================================
 # ANÁLISES
 # =====================================
 def rfm_analise(df):
     if df.empty:
         return pd.DataFrame()
+
     df.columns = df.columns.str.lower()
-    if not {"paciente_nome", "data_atendimento"}.issubset(df.columns):
-        st.warning("⚠️ Campos esperados não encontrados em v_base.")
+    cols_needed = {"paciente_id", "paciente_nome", "data_atendimento", "ticket_liquido"}
+    if not cols_needed.issubset(df.columns):
+        st.warning(f"⚠️ Faltam colunas em v_base: {cols_needed - set(df.columns)}")
         return pd.DataFrame()
 
     d = df.dropna(subset=["paciente_nome", "data_atendimento"]).copy()
     hoje = pd.Timestamp.today().normalize()
     ult_ano = d[d["data_atendimento"] >= (hoje - pd.DateOffset(months=12))]
+
     grp = ult_ano.groupby(["paciente_id", "paciente_nome"], as_index=False).agg(
         ultima=("data_atendimento", "max"),
         vezes=("data_atendimento", "count"),
         total=("ticket_liquido", "sum")
     )
+
     grp["dias_desde_ultima"] = (hoje - grp["ultima"]).dt.days
     grp["tempo_sem_retorno"] = np.select(
         [
@@ -123,19 +128,18 @@ def desempenho_protocolos(df):
     if df.empty:
         return pd.DataFrame()
 
-    df = df.copy()
     df.columns = df.columns.str.lower()
-    if "protocolo" not in df.columns:
-        st.warning(f"⚠️ Coluna 'protocolo' não encontrada. Colunas atuais: {list(df.columns)}")
-        return pd.DataFrame()
-    if "ticket_liquido" not in df.columns:
-        st.warning(f"⚠️ Coluna 'ticket_liquido' não encontrada. Colunas atuais: {list(df.columns)}")
+    if "protocolo" not in df.columns or "ticket_liquido" not in df.columns:
+        st.warning(f"⚠️ Colunas esperadas não encontradas em v_base.")
+        st.write("Colunas atuais:", df.columns.tolist())
         return pd.DataFrame()
 
-    df["ticket_liquido"] = pd.to_numeric(df["ticket_liquido"], errors="coerce").fillna(0)
+    d = df.copy()
+    d["ticket_liquido"] = pd.to_numeric(d["ticket_liquido"], errors="coerce").fillna(0)
+
     try:
-        g = df.groupby("protocolo", as_index=False).agg(
-            atendimentos=("atendimento_id", "count"),
+        g = d.groupby("protocolo", as_index=False).agg(
+            atendimentos=("protocolo", "count"),
             receita=("ticket_liquido", "sum"),
             ticket_medio=("ticket_liquido", "mean")
         )
@@ -174,7 +178,6 @@ nomes_protocolos = sorted(protocolos_df["nome"].unique().tolist()) if not protoc
 if "form_data" not in st.session_state:
     st.session_state.form_data = {}
 
-# Seleção de paciente (auto-preenche)
 paciente_sel = st.selectbox(
     "Nome do paciente",
     options=[""] + nomes_pacientes,
@@ -214,7 +217,6 @@ with st.form("form_vbase_simplificado"):
             value=st.session_state.form_data.get("cidade_bairro", ""),
             placeholder="Ex: Belo Horizonte / Lourdes"
         )
-
         protocolo = st.selectbox("Protocolo", options=[""] + nomes_protocolos, index=0)
         if protocolo == "":
             protocolo = st.text_input("Novo protocolo", placeholder="Ex: Semaglutida semanal")
@@ -251,14 +253,13 @@ with st.form("form_vbase_simplificado"):
     enviar = st.form_submit_button("✅ Salvar atendimento")
 
 # =====================================
-# SALVAMENTO INTELIGENTE
+# SALVAMENTO
 # =====================================
 if enviar:
     if not paciente_nome or not protocolo:
         st.error("Por favor, preencha pelo menos o nome do paciente e o protocolo.")
     else:
         try:
-            # PACIENTE
             paciente_q = sb.table("pacientes").select("paciente_id").ilike("nome", paciente_nome.strip()).execute()
             if paciente_q.data:
                 paciente_id = paciente_q.data[0]["paciente_id"]
@@ -272,7 +273,6 @@ if enviar:
                 }).execute()
                 paciente_id = novo.data[0]["paciente_id"]
 
-            # PROTOCOLO
             protocolo_q = sb.table("protocolos").select("protocolo_id").ilike("nome", protocolo.strip()).execute()
             if protocolo_q.data:
                 protocolo_id = protocolo_q.data[0]["protocolo_id"]
@@ -285,7 +285,6 @@ if enviar:
                 }).execute()
                 protocolo_id = novo_p.data[0]["protocolo_id"]
 
-            # ATENDIMENTO
             atendimento_id = str(uuid.uuid4())
             sb.table("atendimentos").insert({
                 "atendimento_id": atendimento_id,
@@ -304,7 +303,6 @@ if enviar:
                 "created_at": datetime.now().isoformat()
             }).execute()
 
-            # PAGAMENTO
             if valor or desconto or custo_estimado:
                 sb.table("pagamentos").insert({
                     "pagamento_id": str(uuid.uuid4()),
@@ -320,7 +318,6 @@ if enviar:
                     "created_at": datetime.now().isoformat()
                 }).execute()
 
-            # LIMPA E ATUALIZA
             fetch_v_base.clear()
             fetch_pacientes_base.clear()
             fetch_protocolos_base.clear()
@@ -343,11 +340,9 @@ if df.empty:
     st.info("Nenhum dado encontrado ainda.")
     st.stop()
 
-# Remove IDs e timestamps
 cols_visiveis = [c for c in df.columns if not c.endswith("_id") and c not in ["created_at"]]
 df = df[cols_visiveis]
 
-# Métricas
 col1, col2, col3, col4 = st.columns(4)
 receita_total = df["ticket_liquido"].sum()
 total_atendimentos = len(df)
@@ -365,8 +360,8 @@ st.dataframe(df, use_container_width=True, height=350)
 st.markdown("### 📈 Protocolos com maior faturamento")
 prot = desempenho_protocolos(df)
 if not prot.empty:
-    fig = px.bar(prot.head(10), x="Protocolo", y="Receita",
-                 color="Protocolo", title="Protocolos mais lucrativos")
+    fig = px.bar(prot.head(10), x="Protocolo", y="Receita", color="Protocolo",
+                 title="Protocolos mais lucrativos")
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("Nenhum dado disponível para exibir o gráfico de faturamento por protocolo.")
@@ -379,4 +374,5 @@ if not rfm_df.empty:
 st.markdown("### 📞 Pacientes que estão há muito tempo sem retornar")
 op = oportunidades_retorno(df, rfm_df)
 if not op.empty:
-    st.dataframe(op[["Paciente", "Dias desde o último atendimento", "Total gasto (R$)"]], use_container_width=True)
+    st.dataframe(op[["Paciente", "Dias desde o último atendimento", "Total gasto (R$)"]],
+                 use_container_width=True)

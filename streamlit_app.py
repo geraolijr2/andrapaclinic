@@ -278,7 +278,7 @@ if enviar:
             fetch_pacientes_base.clear()
             fetch_protocolos_base.clear()
             st.success(f"✅ Atendimento de {paciente_nome} salvo com sucesso!")
-            st.experimental_rerun()
+            st.rerun()
 
         except Exception as e:
             st.error(f"Erro ao salvar: {e}")

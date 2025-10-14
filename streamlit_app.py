@@ -44,6 +44,18 @@ def fetch_protocolos_base():
 def fetch_v_base(limit=10000):
     res = sb.table("v_base").select("*").limit(limit).execute()
     df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    # Padroniza nomes conhecidos
+    rename_map = {}
+    for c in df.columns:
+        if c.lower() in ["protocolo_nome", "nome_protocolo"]:
+            rename_map[c] = "protocolo"
+        if c.lower() in ["paciente_nome", "nome_paciente"]:
+            rename_map[c] = "paciente_nome"
+        if c.lower() in ["data_inicio"]:
+            rename_map[c] = "data_atendimento"
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
     expected = [
         "atendimento_id", "paciente_id", "paciente_nome",
         "data_atendimento", "protocolo", "status",
@@ -53,6 +65,7 @@ def fetch_v_base(limit=10000):
         if c not in df.columns:
             df[c] = None
     return df[expected]
+
 
 
 # =====================================
@@ -94,16 +107,31 @@ def rfm_analise(df):
     return grp
 
 def desempenho_protocolos(df):
-    if df.empty or "protocolo" not in df:
+    if df.empty:
         return pd.DataFrame()
+
+    # Detecta o nome da coluna do protocolo
+    col_proto = None
+    for c in df.columns:
+        if c.lower() in ["protocolo", "protocolo_nome", "nome_protocolo"]:
+            col_proto = c
+            break
+
+    if not col_proto:
+        st.warning("⚠️ Nenhuma coluna de protocolo encontrada na base (ex: 'protocolo_nome').")
+        return pd.DataFrame()
+
     d = df.copy()
-    d["ticket_liquido"] = pd.to_numeric(d["ticket_liquido"], errors="coerce").fillna(0)
-    g = d.groupby("protocolo", as_index=False).agg({
-        "atendimento_id": "count",
+    d["ticket_liquido"] = pd.to_numeric(d.get("ticket_liquido", 0), errors="coerce").fillna(0)
+
+    g = d.groupby(col_proto, as_index=False).agg({
+        d.columns[0]: "count",  # conta qualquer coluna existente (como atendimento_id)
         "ticket_liquido": ["sum", "mean"]
     })
+
     g.columns = ["Protocolo", "Atendimentos", "Receita", "Ticket médio (R$)"]
     return g.sort_values("Receita", ascending=False)
+
 
 def oportunidades_retorno(df, rfm_df):
     if df.empty or rfm_df.empty: return pd.DataFrame()

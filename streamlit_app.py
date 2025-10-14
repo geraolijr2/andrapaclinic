@@ -225,36 +225,36 @@ with st.form("form_vbase_simplificado"):
         paciente_nome = st.text_input(
             "Nome completo",
             value=st.session_state.form_data.get("paciente_nome", ""),
-            # placeholder="Ex: Ana Souza"
+            placeholder="Ex: Ana Souza"
         )
         telefone = st.text_input(
             "Telefone / WhatsApp",
             value=st.session_state.form_data.get("telefone", ""),
-            # placeholder="Ex: (31) 99999-9999"
+            placeholder="Ex: (31) 99999-9999"
         )
         cidade_bairro = st.text_input(
             "Cidade / Bairro",
             value=st.session_state.form_data.get("cidade_bairro", ""),
-            # placeholder="Ex: Belo Horizonte / Lourdes"
+            placeholder=""
         )
         protocolo = st.selectbox("Protocolo", options=[""] + nomes_protocolos, index=0)
         if protocolo == "":
-            protocolo = st.text_input("Novo protocolo", # placeholder="Ex: Semaglutida semanal")
+            protocolo = st.text_input("Novo protocolo", placeholder="Ex: Semaglutida semanal")
 
         categoria = st.selectbox("Categoria", ["Emagrecimento", "Estética", "Outros"], index=0)
-        medica = st.text_input("Médica responsável", # placeholder="Ex: Dra. Mariana")
+        medica = st.text_input("Médica responsável", placeholder="")
 
     with col2:
         data_atendimento = st.date_input("Data do atendimento", value=date.today())
         status = st.selectbox("Status", ["Em curso", "Concluído", "Cancelado"], index=0)
         tcle_assinado = st.checkbox("TCLE assinado?", value=True)
-        origem = st.text_input("Origem", # placeholder="Ex: Indicação, Instagram, Google")
-        dose_inicial_prescrita = st.text_input("Dose inicial prescrita", # placeholder="Ex: 0.25 mg")
-        dose_final_ajustada = st.text_input("Dose final ajustada", # placeholder="Ex: 1 mg")
+        origem = st.text_input("Origem", placeholder="Ex: Indicação, Instagram, Google")
+        dose_inicial_prescrita = st.text_input("Dose inicial prescrita", placeholder="Ex: 0.25 mg")
+        dose_final_ajustada = st.text_input("Dose final ajustada", placeholder="Ex: 1 mg")
         data_termino_prevista = st.date_input("Previsão de término", value=None)
         data_termino_real = st.date_input("Término real (se já finalizado)", value=None)
 
-    observacoes = st.text_area("Observações", # placeholder="Observações clínicas, evolução...")
+    observacoes = st.text_area("Observações", placeholder="Observações clínicas, evolução...")
 
     with st.expander("💰 Dados de pagamento (opcional)", expanded=False):
         col5, col6, col7 = st.columns(3)

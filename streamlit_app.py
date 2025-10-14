@@ -338,15 +338,18 @@ if enviar:
                     "created_at": datetime.now().isoformat()
                 }).execute()
 
+            # Atualiza dados e limpa apenas variáveis auxiliares
             fetch_v_base.clear()
             fetch_pacientes_base.clear()
             fetch_protocolos_base.clear()
             st.session_state.form_data = {}
-            st.session_state.paciente_select = ""
+
             st.success(f"✅ Atendimento de {paciente_nome} salvo com sucesso!")
+            st.rerun()
 
         except Exception as e:
             st.error(f"Erro ao salvar: {e}")
+
 
 
 # =====================================

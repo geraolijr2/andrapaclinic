@@ -44,27 +44,17 @@ def fetch_protocolos_base():
 def fetch_v_base(limit=10000):
     res = sb.table("v_base").select("*").limit(limit).execute()
     df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-    # Padroniza nomes conhecidos
-    rename_map = {}
-    for c in df.columns:
-        if c.lower() in ["protocolo_nome", "nome_protocolo"]:
-            rename_map[c] = "protocolo"
-        if c.lower() in ["paciente_nome", "nome_paciente"]:
-            rename_map[c] = "paciente_nome"
-        if c.lower() in ["data_inicio"]:
-            rename_map[c] = "data_atendimento"
-    if rename_map:
-        df = df.rename(columns=rename_map)
+    if df.empty:
+        return pd.DataFrame(columns=[
+            "atendimento_id", "paciente_id", "paciente_nome",
+            "data_atendimento", "protocolo", "status",
+            "ticket_liquido", "situacao_financeira"
+        ])
+    # Garante os tipos básicos
+    df["data_atendimento"] = pd.to_datetime(df["data_atendimento"], errors="coerce")
+    df["ticket_liquido"] = pd.to_numeric(df["ticket_liquido"], errors="coerce").fillna(0)
+    return df
 
-    expected = [
-        "atendimento_id", "paciente_id", "paciente_nome",
-        "data_atendimento", "protocolo", "status",
-        "ticket_liquido", "situacao_financeira"
-    ]
-    for c in expected:
-        if c not in df.columns:
-            df[c] = None
-    return df[expected]
 
 
 
@@ -74,18 +64,16 @@ def fetch_v_base(limit=10000):
 RETORNO_INATIVO_DIAS = 90
 
 def rfm_analise(df):
-    if df.empty: return pd.DataFrame()
+    if df.empty: 
+        return pd.DataFrame()
     d = df.copy()
-    d["data_atendimento"] = pd.to_datetime(d["data_atendimento"], errors="coerce")
-    d["ticket_liquido"] = pd.to_numeric(d.get("ticket_liquido", 0), errors="coerce").fillna(0)
-    d = d.dropna(subset=["data_atendimento"])
-    if d.empty: return pd.DataFrame()
+    d = d.dropna(subset=["paciente_nome", "data_atendimento"])
     hoje = pd.Timestamp.today().normalize()
     ult_ano = d[d["data_atendimento"] >= (hoje - pd.DateOffset(months=12))]
-    grp = ult_ano.groupby(["paciente_id","paciente_nome"], as_index=False).agg(
-        ultima=("data_atendimento","max"),
-        vezes=("data_atendimento","count"),
-        total=("ticket_liquido","sum")
+    grp = ult_ano.groupby(["paciente_id", "paciente_nome"], as_index=False).agg(
+        ultima=("data_atendimento", "max"),
+        vezes=("data_atendimento", "count"),
+        total=("ticket_liquido", "sum")
     )
     grp["dias_desde_ultima"] = (hoje - grp["ultima"]).dt.days
     grp["tempo_sem_retorno"] = np.select(
@@ -111,57 +99,17 @@ def desempenho_protocolos(df):
     if df.empty:
         return pd.DataFrame()
 
-    # Detecta coluna de protocolo
-    col_proto = next((c for c in df.columns if c.lower() in ["protocolo", "protocolo_nome", "nome_protocolo"]), None)
-    if not col_proto:
-        st.warning("⚠️ Nenhuma coluna de protocolo encontrada na base (ex: 'protocolo_nome').")
-        return pd.DataFrame()
-
-    # Detecta coluna de ID ou qualquer outra para contagem
-    col_id = next((c for c in df.columns if "id" in c.lower()), None)
-    if not col_id:
-        col_id = df.columns[0]
-
     d = df.copy()
-    d["ticket_liquido"] = pd.to_numeric(d.get("ticket_liquido", 0), errors="coerce").fillna(0)
+    d["ticket_liquido"] = pd.to_numeric(d["ticket_liquido"], errors="coerce").fillna(0)
 
-    try:
-        g = d.groupby(col_proto, as_index=False).agg({
-            col_id: "count",
-            "ticket_liquido": ["sum", "mean"]
-        })
-
-        # Aplaina o MultiIndex caso exista
-        g.columns = ['_'.join(col).strip('_') if isinstance(col, tuple) else col for col in g.columns]
-
-        # Garante nomes padronizados
-        rename_map = {}
-        for c in g.columns:
-            if col_proto in c:
-                rename_map[c] = "Protocolo"
-            elif "count" in c:
-                rename_map[c] = "Atendimentos"
-            elif "sum" in c:
-                rename_map[c] = "Receita"
-            elif "mean" in c:
-                rename_map[c] = "Ticket médio (R$)"
-        g = g.rename(columns=rename_map)
-
-        # Garante que todas as colunas existam
-        for c in ["Protocolo", "Atendimentos", "Receita", "Ticket médio (R$)"]:
-            if c not in g.columns:
-                g[c] = 0
-
-        g = g[["Protocolo", "Atendimentos", "Receita", "Ticket médio (R$)"]]
-        g["Receita"] = g["Receita"].astype(float)
-        g["Ticket médio (R$)"] = g["Ticket médio (R$)"].astype(float)
-        g = g.sort_values("Receita", ascending=False)
-
-        return g
-
-    except Exception as e:
-        st.error(f"Erro ao calcular desempenho dos protocolos: {e}")
-        return pd.DataFrame()
+    g = d.groupby("protocolo", as_index=False).agg(
+        Atendimentos=("atendimento_id", "count"),
+        Receita=("ticket_liquido", "sum"),
+        Ticket_medio=("ticket_liquido", "mean")
+    )
+    g = g.rename(columns={"Ticket_medio": "Ticket médio (R$)"})
+    g = g.sort_values("Receita", ascending=False)
+    return g
 
 
 
@@ -392,14 +340,15 @@ prot = desempenho_protocolos(df)
 if not prot.empty:
     fig = px.bar(
         prot.head(10),
-        x="Protocolo",
+        x="protocolo",
         y="Receita",
-        color="Protocolo",
+        color="protocolo",
         title="Protocolos mais lucrativos"
     )
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("Nenhum dado disponível para exibir o gráfico de faturamento por protocolo.")
+
 
 
 

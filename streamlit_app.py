@@ -52,9 +52,21 @@ def fetch_v_base(limit=10000):
             st.info("⚠️ Nenhum registro encontrado em v_base.")
             return pd.DataFrame()
 
-        df = pd.DataFrame(res.data)
+        # Corrige UUIDs antes de criar o DataFrame
+        rows = []
+        for r in res.data:
+            # Força conversão de UUIDs para texto
+            for key in ["paciente_id", "atendimento_id"]:
+                if key in r and r[key] is not None:
+                    r[key] = str(r[key])
+                elif key not in r:
+                    # se o Supabase não trouxe o campo, cria vazio
+                    r[key] = None
+            rows.append(r)
 
-        # Normaliza nomes das colunas (remove espaços e caracteres invisíveis)
+        df = pd.DataFrame(rows)
+
+        # Normaliza nomes de colunas
         df.columns = (
             df.columns
             .str.encode("ascii", "ignore")
@@ -65,10 +77,18 @@ def fetch_v_base(limit=10000):
             .str.lower()
         )
 
-        # Log para debug (apenas para conferência inicial)
+        # Força presença dos campos esperados
+        expected_cols = [
+            "atendimento_id", "paciente_id", "paciente_nome", "protocolo",
+            "data_atendimento", "ticket_liquido", "status", "situacao_financeira"
+        ]
+        for c in expected_cols:
+            if c not in df.columns:
+                df[c] = None
+
         st.write("🔍 Colunas normalizadas:", df.columns.tolist())
 
-        # Garante tipos
+        # Garante tipos corretos
         if "data_atendimento" in df.columns:
             df["data_atendimento"] = pd.to_datetime(df["data_atendimento"], errors="coerce")
         if "ticket_liquido" in df.columns:

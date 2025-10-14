@@ -24,32 +24,89 @@ def get_sb() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 sb = get_sb()
 
+# =====================================
+# FORMULÁRIO INTELIGENTE – MODO MÉDICA
+# =====================================
 
-
-# --- CADASTRO SIMPLIFICADO (MODO MÉDICA) ---
 st.markdown("## 🩺 Registrar Protocolados")
+
+# Carrega base para autocomplete
+@st.cache_data(ttl=30)
+def fetch_pacientes_base():
+    res = sb.table("v_base").select("paciente_nome, telefone, cidade_bairro, medica, origem").execute()
+    df = pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    df = df.dropna(subset=["paciente_nome"]).drop_duplicates(subset=["paciente_nome"])
+    return df
+
+pacientes_df = fetch_pacientes_base()
+nomes_existentes = sorted(pacientes_df["paciente_nome"].unique().tolist()) if not pacientes_df.empty else []
+
+# Estado local para autocompletar campos
+if "dados_paciente" not in st.session_state:
+    st.session_state.dados_paciente = {}
+
+def preencher_campos(nome):
+    """Busca dados padrão do paciente selecionado"""
+    dados = pacientes_df[pacientes_df["paciente_nome"] == nome]
+    if not dados.empty:
+        row = dados.iloc[0]
+        st.session_state.dados_paciente = {
+            "telefone": row.get("telefone", ""),
+            "cidade_bairro": row.get("cidade_bairro", ""),
+            "medica": row.get("medica", ""),
+            "origem": row.get("origem", "")
+        }
+    else:
+        st.session_state.dados_paciente = {}
 
 with st.form("form_vbase_simplificado"):
     st.caption("Preencha os campos principais do atendimento atual.")
+
     col1, col2 = st.columns(2)
 
-    # Coluna esquerda - informações principais
+    # --- COLUNA 1: Dados principais ---
     with col1:
-        paciente_nome = st.text_input("Nome do paciente", placeholder="Ex: Ana Souza")
-        telefone = st.text_input("Telefone / WhatsApp", placeholder="Ex: (31) 99999-9999")
+        paciente_nome = st.selectbox(
+            "Nome do paciente",
+            options=[""] + nomes_existentes,
+            index=0,
+            key="sel_paciente",
+            help="Selecione um paciente existente ou digite um novo nome."
+        )
+        # Se selecionou um nome existente, preencher automaticamente
+        if paciente_nome:
+            preencher_campos(paciente_nome)
+
+        telefone = st.text_input(
+            "Telefone / WhatsApp",
+            value=st.session_state.dados_paciente.get("telefone", ""),
+            placeholder="Ex: (31) 99999-9999"
+        )
         protocolo = st.text_input("Protocolo", placeholder="Ex: Semaglutida semanal")
         categoria = st.selectbox("Categoria", ["Emagrecimento", "Estética", "Outros"], index=0)
-        medica = st.text_input("Médica responsável", placeholder="Ex: Dra. Mariana")
+        medica = st.text_input(
+            "Médica responsável",
+            value=st.session_state.dados_paciente.get("medica", ""),
+            placeholder="Ex: Dra. Mariana"
+        )
 
-    # Coluna direita - status e dados principais
+    # --- COLUNA 2: Dados secundários ---
     with col2:
         data_atendimento = st.date_input("Data do atendimento", value=date.today())
         status = st.selectbox("Status", ["Em curso", "Concluído", "Cancelado"], index=0)
         tcle_assinado = st.checkbox("TCLE assinado?", value=True)
-        origem = st.text_input("Origem", placeholder="Ex: Indicação, Instagram, Google")
-        cidade_bairro = st.text_input("Cidade / Bairro", placeholder="Ex: Belo Horizonte / Lourdes")
+        origem = st.text_input(
+            "Origem",
+            value=st.session_state.dados_paciente.get("origem", ""),
+            placeholder="Ex: Indicação, Instagram, Google"
+        )
+        cidade_bairro = st.text_input(
+            "Cidade / Bairro",
+            value=st.session_state.dados_paciente.get("cidade_bairro", ""),
+            placeholder="Ex: Belo Horizonte / Lourdes"
+        )
 
-    # Linha abaixo - campos de protocolo
+    # --- Detalhes do protocolo ---
     st.markdown("### 💊 Detalhes do protocolo")
     col3, col4 = st.columns(2)
     with col3:
@@ -61,7 +118,7 @@ with st.form("form_vbase_simplificado"):
 
     observacoes = st.text_area("Observações", placeholder="Observações clínicas, efeitos relatados, evolução...")
 
-    # Seção de pagamento (expansível)
+    # --- Pagamento (expansível) ---
     with st.expander("💰 Dados de pagamento (opcional)", expanded=False):
         col5, col6, col7 = st.columns(3)
         with col5:
@@ -113,8 +170,15 @@ if enviar:
                 "situacao_financeira": situacao_financeira,
                 "created_at": datetime.now().isoformat()
             }).execute()
+
+            # Atualiza tudo automaticamente
             fetch_v_base.clear()
+            fetch_pacientes_base.clear()
             st.success(f"✅ Atendimento de {paciente_nome} salvo com sucesso!")
+
+            # Força recarregamento da página para atualizar métricas e gráficos
+            st.experimental_rerun()
+
         except Exception as e:
             st.error(f"Erro ao salvar: {e}")
 

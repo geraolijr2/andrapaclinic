@@ -86,7 +86,7 @@ def fetch_v_base(limit=10000):
             if c not in df.columns:
                 df[c] = None
 
-        st.write("🔍 Colunas normalizadas:", df.columns.tolist())
+
 
         # Garante tipos corretos
         if "data_atendimento" in df.columns:
@@ -389,10 +389,7 @@ if not prot.empty:
 else:
     st.info("Nenhum dado disponível para exibir o gráfico de faturamento por protocolo.")
 
-st.markdown("### 🔍 Pacientes e frequência de retorno")
-rfm_df = rfm_analise(df)
-if not rfm_df.empty:
-    st.dataframe(rfm_df, use_container_width=True)
+
 
 st.markdown("### 📞 Pacientes que estão há muito tempo sem retornar")
 op = oportunidades_retorno(df, rfm_df)

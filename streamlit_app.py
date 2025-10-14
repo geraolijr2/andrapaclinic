@@ -99,17 +99,44 @@ def desempenho_protocolos(df):
     if df.empty:
         return pd.DataFrame()
 
-    d = df.copy()
-    d["ticket_liquido"] = pd.to_numeric(d["ticket_liquido"], errors="coerce").fillna(0)
+    # Normaliza colunas para minúsculas e cria um mapa
+    df = df.copy()
+    col_map = {c.lower(): c for c in df.columns}
+    df.columns = df.columns.str.lower()
 
-    g = d.groupby("protocolo", as_index=False).agg(
-        Atendimentos=("atendimento_id", "count"),
-        Receita=("ticket_liquido", "sum"),
-        Ticket_medio=("ticket_liquido", "mean")
-    )
-    g = g.rename(columns={"Ticket_medio": "Ticket médio (R$)"})
+    # Verifica presença das colunas necessárias
+    if "protocolo" not in df.columns:
+        st.warning(f"⚠️ Coluna 'protocolo' não encontrada. Colunas disponíveis: {list(df.columns)}")
+        return pd.DataFrame()
+
+    if "ticket_liquido" not in df.columns:
+        st.warning(f"⚠️ Coluna 'ticket_liquido' não encontrada. Colunas disponíveis: {list(df.columns)}")
+        return pd.DataFrame()
+
+    # Garante que os campos estejam numéricos
+    df["ticket_liquido"] = pd.to_numeric(df["ticket_liquido"], errors="coerce").fillna(0)
+
+    # Faz o agrupamento
+    try:
+        g = df.groupby("protocolo", as_index=False).agg(
+            atendimentos=("atendimento_id", "count"),
+            receita=("ticket_liquido", "sum"),
+            ticket_medio=("ticket_liquido", "mean")
+        )
+    except Exception as e:
+        st.error(f"Erro ao agrupar protocolos: {e}")
+        st.warning(f"Colunas atuais: {list(df.columns)}")
+        return pd.DataFrame()
+
+    g = g.rename(columns={
+        "protocolo": "Protocolo",
+        "atendimentos": "Atendimentos",
+        "receita": "Receita",
+        "ticket_medio": "Ticket médio (R$)"
+    })
     g = g.sort_values("Receita", ascending=False)
     return g
+
 
 
 

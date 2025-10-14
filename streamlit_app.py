@@ -95,15 +95,17 @@ def rfm_analise(df):
     return grp
 
 def desempenho_protocolos(df):
-    if df.empty or "protocolo" not in df: return pd.DataFrame()
+    if df.empty or "protocolo" not in df:
+        return pd.DataFrame()
     d = df.copy()
     d["ticket_liquido"] = pd.to_numeric(d["ticket_liquido"], errors="coerce").fillna(0)
-    g = d.groupby("protocolo", as_index=False).agg(
-        Atendimentos=("atendimento_id","count"),
-        Receita=("ticket_liquido","sum"),
-        "Ticket médio (R$)"=("ticket_liquido","mean")
-    ).sort_values("Receita", ascending=False)
-    return g
+    g = d.groupby("protocolo", as_index=False).agg({
+        "atendimento_id": "count",
+        "ticket_liquido": ["sum", "mean"]
+    })
+    g.columns = ["Protocolo", "Atendimentos", "Receita", "Ticket médio (R$)"]
+    return g.sort_values("Receita", ascending=False)
+
 
 def oportunidades_retorno(df, rfm_df):
     if df.empty or rfm_df.empty: return pd.DataFrame()

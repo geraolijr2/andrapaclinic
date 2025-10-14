@@ -107,17 +107,20 @@ def rfm_analise(df):
     return grp
 
 def desempenho_protocolos(df):
+def desempenho_protocolos(df):
     if df.empty:
         return pd.DataFrame()
 
-    # Detecta o nome da coluna do protocolo (aceita variações)
+    # Detecta coluna de protocolo
     col_proto = next((c for c in df.columns if c.lower() in ["protocolo", "protocolo_nome", "nome_protocolo"]), None)
     if not col_proto:
         st.warning("⚠️ Nenhuma coluna de protocolo encontrada na base (ex: 'protocolo_nome').")
         return pd.DataFrame()
 
-    # Detecta coluna de ID (para contagem)
-    col_id = next((c for c in df.columns if "id" in c.lower()), df.columns[0])
+    # Detecta coluna de ID ou qualquer outra para contagem
+    col_id = next((c for c in df.columns if "id" in c.lower()), None)
+    if not col_id:
+        col_id = df.columns[0]
 
     d = df.copy()
     d["ticket_liquido"] = pd.to_numeric(d.get("ticket_liquido", 0), errors="coerce").fillna(0)
@@ -127,15 +130,39 @@ def desempenho_protocolos(df):
             col_id: "count",
             "ticket_liquido": ["sum", "mean"]
         })
+
+        # Aplaina o MultiIndex caso exista
+        g.columns = ['_'.join(col).strip('_') if isinstance(col, tuple) else col for col in g.columns]
+
+        # Garante nomes padronizados
+        rename_map = {}
+        for c in g.columns:
+            if col_proto in c:
+                rename_map[c] = "Protocolo"
+            elif "count" in c:
+                rename_map[c] = "Atendimentos"
+            elif "sum" in c:
+                rename_map[c] = "Receita"
+            elif "mean" in c:
+                rename_map[c] = "Ticket médio (R$)"
+        g = g.rename(columns=rename_map)
+
+        # Garante que todas as colunas existam
+        for c in ["Protocolo", "Atendimentos", "Receita", "Ticket médio (R$)"]:
+            if c not in g.columns:
+                g[c] = 0
+
+        g = g[["Protocolo", "Atendimentos", "Receita", "Ticket médio (R$)"]]
+        g["Receita"] = g["Receita"].astype(float)
+        g["Ticket médio (R$)"] = g["Ticket médio (R$)"].astype(float)
+        g = g.sort_values("Receita", ascending=False)
+
+        return g
+
     except Exception as e:
-        st.error(f"Erro ao agrupar protocolos: {e}")
+        st.error(f"Erro ao calcular desempenho dos protocolos: {e}")
         return pd.DataFrame()
 
-    g.columns = ["Protocolo", "Atendimentos", "Receita", "Ticket médio (R$)"]
-    g["Receita"] = g["Receita"].astype(float)
-    g["Ticket médio (R$)"] = g["Ticket médio (R$)"].astype(float)
-    g = g.sort_values("Receita", ascending=False)
-    return g
 
 
 
@@ -362,12 +389,18 @@ st.dataframe(df, use_container_width=True, height=350)
 
 st.markdown("### 📈 Protocolos com maior faturamento")
 prot = desempenho_protocolos(df)
-if not prot.empty and "Protocolo" in prot.columns and "Receita" in prot.columns:
-    fig = px.bar(prot.head(10), x="Protocolo", y="Receita",
-                 color="Protocolo", title="Protocolos mais lucrativos")
+if not prot.empty:
+    fig = px.bar(
+        prot.head(10),
+        x="Protocolo",
+        y="Receita",
+        color="Protocolo",
+        title="Protocolos mais lucrativos"
+    )
     st.plotly_chart(fig, use_container_width=True)
 else:
     st.info("Nenhum dado disponível para exibir o gráfico de faturamento por protocolo.")
+
 
 
 st.markdown("### 🔍 Pacientes e frequência de retorno")

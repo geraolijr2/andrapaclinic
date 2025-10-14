@@ -106,7 +106,7 @@ def rfm_analise(df):
     })
     return grp
 
-def desempenho_protocolos(df):
+
 def desempenho_protocolos(df):
     if df.empty:
         return pd.DataFrame()
